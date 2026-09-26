@@ -177,4 +177,24 @@ enum SpotifyResponsePatcher {
         }
         return nil
     }
+
+    // 304 replays serve the PERSISTED patched body raw — the modify pass ran
+    // when that body was first cached, so any Flags-explorer override made
+    // after it never applied (build-5 tester log: warm sessions showed no
+    // "[Flags] applied" line at all). Re-running the modify pass over the
+    // cached bytes before replay fixes that. Idempotent: re-setting the same
+    // bools is a no-op and force-appends only fire for properties still
+    // absent, so replaying this on every 304 is safe.
+    static func repatchedCustomizeReplay(_ cached: Data) -> Data {
+        do {
+            var msg = try CustomizeMessage(serializedBytes: cached)
+            modifyRemoteConfiguration(&msg.response)
+            let data = try msg.serializedData()
+            cachedCustomizeData = data
+            return data
+        } catch {
+            writeDebugLog("[Flags] customize replay re-patch failed (\(error)); serving cached body")
+            return cached
+        }
+    }
 }

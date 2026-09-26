@@ -7,6 +7,7 @@ import Orion
 import Foundation
 import UIKit
 import ObjectiveC.runtime
+import WebKit
 
 // Every service has its own group. Spotify rolls these modules out
 // independently, so one missing/renamed class must not disable the rest of the
@@ -347,22 +348,22 @@ class LeavebehindAdElementProviderKill: ClassHook<NSObject> {
     }
 }
 
-// HTML-backed brand-ad creative. NSObject-based with an internal cast:
-// ElementUI classes have proven non-UIView on some 9.1.x builds.
+// HTML-backed brand-ad creative. NSObject-based (not a UIView — the old
+// didMoveToSuperview hook could never attach; build-5 log proved it). Surface
+// probe showed it IS the WKNavigationDelegate of its ad webview, so the kill
+// is: cancel every navigation decision → the creative never loads.
 class HtmlAdElementUIKill: ClassHook<NSObject> {
     typealias Group = ScrollFeedAdViewGroup
     static let targetName =
         "_TtC22AdsPlatform_ElementKit15HtmlAdElementUI"
 
-    func didMoveToSuperview() {
-        orig.didMoveToSuperview()
-        guard let view = target as? UIView else { return }
-        view.isHidden = true
-        view.isUserInteractionEnabled = false
-        if view.superview != nil {
-            adlog("HtmlAdElementUI")
-            view.removeFromSuperview()
-        }
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
+        decisionHandler(.cancel)
+        adlog("HtmlAdElementUI blocked nav to \(navigationAction.request.url?.host ?? "?")")
     }
 }
 
@@ -477,7 +478,8 @@ func activateEeveeAdBlockerExtended() {
         ScrollFeedAdControllerGroup().activate()
     }
     activateOrProbe(HtmlAdElementUIKill.targetName,
-                    label: "HtmlAdElementUI", selector: viewSelector) {
+                    label: "HtmlAdElementUI",
+                    selector: Selector(("webView:decidePolicyForNavigationAction:decisionHandler:"))) {
         ScrollFeedAdViewGroup().activate()
     }
     activateOrProbe(DSAMainViewKill.targetName,

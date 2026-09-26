@@ -60,7 +60,8 @@ class SPTDataLoaderServiceHook: ClassHook<NSObject>, SpotifySessionDelegate {
             // also fall back to the persisted copy of the last patched body.
             if url.isCustomize, let cached = SpotifyResponsePatcher.cachedCustomizeData
                 ?? UserDefaults.cachedCustomizeData {
-                orig.URLSession(session, dataTask: task, didReceiveData: cached)
+                let repatched = SpotifyResponsePatcher.repatchedCustomizeReplay(cached)
+                orig.URLSession(session, dataTask: task, didReceiveData: repatched)
                 orig.URLSession(session, task: task, didCompleteWithError: nil)
             } else {
                 // Some Spotify builds complete "modified" tasks with 0 body bytes.
@@ -137,8 +138,10 @@ class SPTDataLoaderServiceHook: ClassHook<NSObject>, SpotifySessionDelegate {
             if let cached = SpotifyResponsePatcher.cachedCustomizeData
                 ?? UserDefaults.cachedCustomizeData,
                let synthetic = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "2.0", headerFields: [:]) {
+                let repatched = SpotifyResponsePatcher.repatchedCustomizeReplay(cached)
                 orig.URLSession(session, dataTask: task, didReceiveResponse: synthetic, completionHandler: handler)
-                orig.URLSession(session, dataTask: task, didReceiveData: cached)
+                orig.URLSession(session, dataTask: task, didReceiveData: repatched)
+                writeDebugLog("[DL] Patched customize (304 replay re-patched)")
                 SpotifyResponsePatcher.markCustomizeTaskHandled(task.taskIdentifier)
                 return
             }

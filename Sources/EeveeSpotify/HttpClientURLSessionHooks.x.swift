@@ -57,7 +57,8 @@ class HttpClientURLSessionHook: ClassHook<NSObject>, SpotifySessionDelegate {
             // empty on the first completion of a fresh process (warm relaunch 304).
             if url.isCustomize, let cached = SpotifyResponsePatcher.cachedCustomizeData
                 ?? UserDefaults.cachedCustomizeData {
-                orig.URLSession(session, dataTask: task, didReceiveData: cached)
+                let repatched = SpotifyResponsePatcher.repatchedCustomizeReplay(cached)
+                orig.URLSession(session, dataTask: task, didReceiveData: repatched)
                 orig.URLSession(session, task: task, didCompleteWithError: nil)
             } else {
                 // Some Spotify builds complete "modified" tasks with 0 body bytes.
@@ -118,8 +119,10 @@ class HttpClientURLSessionHook: ClassHook<NSObject>, SpotifySessionDelegate {
             if let cached = SpotifyResponsePatcher.cachedCustomizeData
                 ?? UserDefaults.cachedCustomizeData,
                let synthetic = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "2.0", headerFields: [:]) {
+                let repatched = SpotifyResponsePatcher.repatchedCustomizeReplay(cached)
                 orig.URLSession(session, dataTask: task, didReceiveResponse: synthetic, completionHandler: handler)
-                orig.URLSession(session, dataTask: task, didReceiveData: cached)
+                orig.URLSession(session, dataTask: task, didReceiveData: repatched)
+                writeDebugLog("[HCUS] Patched customize (304 replay re-patched)")
                 SpotifyResponsePatcher.markCustomizeTaskHandled(task.taskIdentifier)
                 return
             }
