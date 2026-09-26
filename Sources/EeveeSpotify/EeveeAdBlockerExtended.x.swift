@@ -46,6 +46,58 @@ private func ablog(_ message: String) {
     writeDebugLog("[AdBlock] \(message)")
 }
 
+// Several 9.1.8x ad-pipeline classes have no -load (so load-suppression can't
+// attach) and their ElementUI classes aren't UIViews (so view kills can't
+// attach). The static symbol dump has no instance methods, so we can't pick
+// hook targets offline — dump the class's real method surface into the tester
+// log instead (same proven pattern as EeveeProbes' dumpClass, but routed to
+// the debug file the tester actually sends back).
+private func dumpMethodSurface(_ cls: AnyClass, label: String) {
+    var count: UInt32 = 0
+    guard let methods = class_copyMethodList(cls, &count) else {
+        ablog("\(label) surface: no instance methods")
+        return
+    }
+    var names: [String] = []
+    for i in 0..<Int(count) {
+        names.append(NSStringFromSelector(method_getName(methods[i])))
+    }
+    free(methods)
+    let listed = names.prefix(40).joined(separator: ",")
+    let suffix = names.count > 40 ? ",…+(\(names.count - 40))" : ""
+    ablog("\(label) surface(\(names.count)): \(listed)\(suffix)")
+}
+
+// Classes register lazily; anything unresolved at init gets one log-only
+// re-probe after launch settles. Never re-activates hooks (double-swizzle
+// risk) — diagnostics only.
+private var pendingSurfaceProbes: [(name: String, label: String)] = []
+
+private func probeSurface(named targetName: String, label: String) {
+    guard let cls = findTweakClass(targetName) else {
+        ablog("\(label) probe: class not registered")
+        pendingSurfaceProbes.append((targetName, label))
+        return
+    }
+    dumpMethodSurface(cls, label: label)
+}
+
+private func scheduleDeferredSurfaceProbes() {
+    guard !pendingSurfaceProbes.isEmpty else { return }
+    let pending = pendingSurfaceProbes
+    pendingSurfaceProbes = []
+    DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+        for (name, label) in pending {
+            guard let cls = findTweakClass(name) else {
+                ablog("\(label) deferred probe: still not registered after 5s")
+                continue
+            }
+            ablog("\(label) deferred probe: class registered late")
+            dumpMethodSurface(cls, label: label)
+        }
+    }
+}
+
 // Swift classes register in the ObjC runtime lazily, so NSClassFromString at
 // tweak-init time can miss classes that exist (build-3 tester log: every
 // scroll-feed service kill skipped as "unavailable" while the ad rendered).
@@ -360,6 +412,8 @@ func activateEeveeAdBlockerExtended() {
         }
         guard class_getInstanceMethod(cls, loadSelector) != nil else {
             ablog("\(label)/load unavailable: no load selector on \(NSStringFromClass(cls))")
+            // No -load to suppress — record what CAN be hooked instead.
+            dumpMethodSurface(cls, label: label)
             continue
         }
         activate()
@@ -390,50 +444,52 @@ func activateEeveeAdBlockerExtended() {
     // starvation. Both runtime-gated so older builds degrade gracefully.
     // Orion rejects this class as non-UIView (9.1.84), so the NSObject hook
     // below attaches only if a view-compatible method actually exists.
-    if let cls = findTweakClass(EmbeddedAdAdapterElementUIKill.targetName),
-       class_getInstanceMethod(cls, viewSelector) != nil {
-        ScrollFeedAdViewGroup().activate()
+    // View/service kills with split skip reasons: "class not registered" and
+    // "registered but no hookable selector" are different problems (late Swift
+    // registration vs. non-UIView ElementUI classes) and need different fixes.
+    func activateOrProbe(_ targetName: String, label: String,
+                         selector: Selector, group: () -> Void) {
+        guard let cls = findTweakClass(targetName) else {
+            ablog("\(label) unavailable; class not registered")
+            pendingSurfaceProbes.append((targetName, label))
+            return
+        }
+        guard class_getInstanceMethod(cls, selector) != nil else {
+            ablog("\(label) skipped: registered but no \(NSStringFromSelector(selector))")
+            dumpMethodSurface(cls, label: label)
+            return
+        }
+        group()
         activated += 1
-        ablog("EmbeddedAdAdapterElementUI (scroll-feed ad) activated")
-    } else {
-        ablog("EmbeddedAdAdapterElementUI unavailable; skipping")
+        ablog("\(label) activated")
     }
 
-    if let cls = findTweakClass(EmbeddedCTAElementsServiceImplKill.targetName),
-       class_getInstanceMethod(cls, loadSelector) != nil {
+    activateOrProbe(EmbeddedAdAdapterElementUIKill.targetName,
+                    label: "EmbeddedAdAdapterElementUI", selector: viewSelector) {
+        ScrollFeedAdViewGroup().activate()
+    }
+    activateOrProbe(EmbeddedCTAElementsServiceImplKill.targetName,
+                    label: "EmbeddedCTAElementsServiceImpl", selector: loadSelector) {
         ScrollFeedAdServiceGroup().activate()
-        activated += 1
-        ablog("EmbeddedCTAElementsServiceImpl activated")
-    } else {
-        ablog("EmbeddedCTAElementsServiceImpl unavailable; skipping")
     }
-
-    if let cls = findTweakClass(EmbeddedAdControllerServiceImplKill.targetName),
-       class_getInstanceMethod(cls, loadSelector) != nil {
+    activateOrProbe(EmbeddedAdControllerServiceImplKill.targetName,
+                    label: "EmbeddedAdControllerServiceImpl", selector: loadSelector) {
         ScrollFeedAdControllerGroup().activate()
-        activated += 1
-        ablog("EmbeddedAdControllerServiceImpl activated")
-    } else {
-        ablog("EmbeddedAdControllerServiceImpl unavailable; skipping")
+    }
+    activateOrProbe(HtmlAdElementUIKill.targetName,
+                    label: "HtmlAdElementUI", selector: viewSelector) {
+        ScrollFeedAdViewGroup().activate()
+    }
+    activateOrProbe(DSAMainViewKill.targetName,
+                    label: "DSAMainView", selector: viewSelector) {
+        ScrollFeedAdViewGroup().activate()
     }
 
-    if let cls = findTweakClass(HtmlAdElementUIKill.targetName),
-       class_getInstanceMethod(cls, viewSelector) != nil {
-        ScrollFeedAdViewGroup().activate()
-        activated += 1
-        ablog("HtmlAdElementUI fallback activated")
-    } else {
-        ablog("HtmlAdElementUI unavailable; skipping")
-    }
-
-    if let cls = findTweakClass(DSAMainViewKill.targetName),
-       class_getInstanceMethod(cls, viewSelector) != nil {
-        ScrollFeedAdViewGroup().activate()
-        activated += 1
-        ablog("DSAMainView fallback activated")
-    } else {
-        ablog("DSAMainView unavailable; skipping")
-    }
+    // Passive surface probe on the player-side ad controller (no hook —
+    // candidates for a future kill come back in the tester log).
+    probeSurface(named: "_TtC23NowPlaying_ElementsImpl20SkipAdControllerImpl",
+                 label: "SkipAdControllerImpl")
 
     ablog("activated \(activated)/\(loadTargets.count + 7) compatible extended hooks")
+    scheduleDeferredSurfaceProbes()
 }

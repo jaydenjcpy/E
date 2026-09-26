@@ -37,8 +37,9 @@ jobs:
         run: |
           wget "${{ inputs.ipa_url }}" --no-verbose -O spotify.ipa
           file_type=$(file --mime-type -b spotify.ipa)
-          [ "$file_type" = "application/zip" ] || {
-            echo "::error::Not a valid IPA: $file_type"; exit 1; }
+          if [[ "$file_type" != "application/x-ios-app" && "$file_type" != "application/zip" ]]; then
+            echo "::error::Not a valid IPA: $file_type"; exit 1
+          fi
 
       - name: Extract Spotify version
         id: ver
