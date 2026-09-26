@@ -112,9 +112,10 @@ struct EeveeSettingsView: View {
                 )
             } label: {
                 NavigationSectionView(
-                    color: .mint,
+                    // Color.mint is iOS 15+; use an explicit hex for iOS 14.
+                    color: Color(hex: "#66D4CF"),
                     title: "flags_explorer".localized,
-                    imageSystemName: "switch.2.on.horizontal"
+                    imageSystemName: "slider.horizontal.3"
                 )
             }
 

@@ -35,10 +35,12 @@ struct EeveeFlagsSettingsView: View {
                         }
                     }
                 }
-                .autocorrectionDisabled()
+                .disableAutocorrection(true)
 
                 if overriddenCount > 0 {
-                    Button(role: .destructive) {
+                    // Plain button with red tint: Button(role:) is iOS 15+ and
+                    // Eevee still supports iOS 14.
+                    Button {
                         EeveeFlagOverrides.removeAll()
                         overrides = [:]
                     } label: {
@@ -46,6 +48,7 @@ struct EeveeFlagsSettingsView: View {
                             Image(systemName: "arrow.counterclockwise")
                             Text("flags_reset_all".localized)
                         }
+                        .foregroundColor(.red)
                     }
                 }
             }
