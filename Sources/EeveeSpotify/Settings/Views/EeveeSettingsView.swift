@@ -107,6 +107,19 @@ struct EeveeSettingsView: View {
 
             Button {
                 pushSettingsController(
+                    with: EeveeFlagsSettingsView(),
+                    title: "flags_explorer".localized
+                )
+            } label: {
+                NavigationSectionView(
+                    color: .mint,
+                    title: "flags_explorer".localized,
+                    imageSystemName: "switch.2.on.horizontal"
+                )
+            }
+
+            Button {
+                pushSettingsController(
                     with: SponsorBlockSettingsView(),
                     title: "sponsorblock".localized
                 )

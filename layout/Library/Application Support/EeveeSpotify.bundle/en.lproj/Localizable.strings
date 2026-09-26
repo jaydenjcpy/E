@@ -300,3 +300,13 @@ managingSegmentsSectionDeps2 = "Settings → 'Reporting & drafts' holds your in-
 categoriesTitle = "Categories";
 categoriesSectionTitle1 = "Per-category actions";
 categoriesSectionDeps1 = "Off = ignore. Show = draw on the bar only. Manual = prompt before skipping. Auto = skip silently.";
+
+flags_explorer = "Flags explorer";
+flags_explorer_footer = "Every remote-config flag this Spotify build ships. Auto keeps Spotify's value; On/Off force it in the patched config. Wrong flags can break features or the app — reset to Auto to undo.";
+flags_search_placeholder = "Search flags";
+flags_reset_all = "Reset all to Auto";
+flags_count_header = "%@ flags in this Spotify build";
+flags_restart_footer = "Takes effect after restarting Spotify.";
+flag_auto = "Auto";
+flag_on = "On";
+flag_off = "Off";

@@ -424,6 +424,35 @@ private func modifyAssignedValues(_ values: inout [AssignedValue]) {
             }
         }
     }
+
+    applyUserFlagOverrides(&values)
+}
+
+// Flags explorer overrides, applied last so a user choice always wins over
+// the hardcoded propertyReplacements. Appends flags the config omits, so an
+// override works even when Spotify never assigns the property.
+private func applyUserFlagOverrides(_ values: inout [AssignedValue]) {
+    let overrides = EeveeFlagOverrides.active
+    guard !overrides.isEmpty else { return }
+
+    var touched = Set<String>()
+    for index in values.indices {
+        let name = values[index].propertyID.name
+        guard let forced = EeveeFlagOverrides.forcedValue(
+            forName: name, scope: values[index].propertyID.scope
+        ) else { continue }
+        values[index].boolValue = BoolValue.with { $0.value = forced }
+        touched.insert(name)
+    }
+
+    for (name, forced) in overrides where !touched.contains(name) {
+        values.append(AssignedValue.with {
+            $0.propertyID = AssignedIdentifier.with { $0.name = name }
+            $0.boolValue = BoolValue.with { $0.value = forced }
+        })
+    }
+
+    writeDebugLog("[Flags] applied \(overrides.count) user override(s), \(touched.count) matched existing assignments")
 }
 
 private func modifyAttributes(_ attributes: inout [String: AccountAttribute]) {
